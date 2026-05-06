@@ -157,4 +157,3 @@ smilesRoundtripIO : String -> IO ()
 smilesRoundtripIO = putStrLn . smilesRoundtrip
 
 
-
