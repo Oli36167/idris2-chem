@@ -151,7 +151,6 @@ posFin (S k) = fin (linearFin k)
 parameters (n          : Nat)
            {auto 0 prf : IsSucc n}
 
-  -- TODO can we generat this more direct using hedgehog?
   genVect : Gen (Vect n Nat)
   genVect = pure (map finToNat (range {len = n}))
 
@@ -170,20 +169,14 @@ swap i j v =
 multipleSwaps : List (Fin n, Fin n) -> Vect n a -> Vect n a
 multipleSwaps swaps v = foldl (\acc, (i, j) => swap i j acc) v swaps
 
--- TODO refactor using filter
 countEffectiveSwaps : List (Fin n, Fin n) -> Nat
-countEffectiveSwaps []                = 0
-countEffectiveSwaps ((i, j) :: swaps) =
-  case i == j of
-    True  =>     countEffectiveSwaps swaps
-    False => S $ countEffectiveSwaps swaps
+countEffectiveSwaps = count (\(i,j) => (i /= j))
 
 parityTest : Ord a => List (Fin n, Fin n) -> Vect n a -> Bool
 parityTest swaps v =
   let v' = multipleSwaps swaps v
-      -- TODO currently initial is always Even..
-      initial        = permutationParity $ toList v
-      final          = permutationParity $ toList v'
+      initial        = permutParity $ toList v
+      final          = permutParity $ toList v'
       expectedChange = natToParity $ countEffectiveSwaps swaps
   in initial <+> expectedChange == final
 
