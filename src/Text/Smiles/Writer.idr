@@ -185,12 +185,15 @@ data Parity = Even | Odd
 
 %runElab deriveIndexed "Parity" [Eq, Show]
 
--- TODO refactor using monoid
 export
 Semigroup Parity where
   Even <+> p    = p
   Odd  <+> Even = Odd
   Odd  <+> Odd  = Even
+
+export
+Monoid Parity where
+  neutral = Even
 
 export
 natToParity : Nat -> Parity
@@ -199,12 +202,8 @@ natToParity n =
     0 => Even
     _ => Odd
 
--- TODO: refactor by combining permutationParity and "<+>"
-countInversions : Ord a => List a -> Nat
-countInversions [] = 0
-countInversions (x :: xs) = count (< x) xs + countInversions xs
-
 export
-permutationParity : Ord a => List a -> Parity
-permutationParity = natToParity . countInversions
+permutParity : Ord a => List a -> Parity
+permutParity []        = natToParity 0
+permutParity (x :: xs) = natToParity (count (< x) xs) <+> permutParity xs
 
