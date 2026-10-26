@@ -2,9 +2,14 @@ module Test.Text.Smiles.Writer
 
 import Chem
 
-import Data.String
 import Data.Graph.Indexed.Util as GU
+import Data.Graph.Indexed.Query.DFS
 import Data.Graph.Indexed.Query.Subgraph
+import Data.String
+import Data.Tree
+import Data.Vect
+
+import Derive.Prelude
 
 import Hedgehog
 
@@ -16,10 +21,11 @@ import Test.Text.Smiles.Generators
 import Text.Molfile.Types
 import Text.ParseError
 import Text.Smiles.Parser
-import Text.Smiles.Writer
 import Text.Smiles.Types
+import Text.Smiles.Writer
 
 %default total
+%language ElabReflection
 
 --------------------------------------------------------------------------------
 --          Test data
@@ -50,6 +56,7 @@ genGraph = lgraph (linear 1 50) (linear 0 80) bond atom
 --------------------------------------------------------------------------------
 --          Helpers
 --------------------------------------------------------------------------------
+
 export
 smilesRoundtrip : String -> String
 smilesRoundtrip s =
@@ -73,6 +80,19 @@ sameGraphAfterRoundtrip s = do
                 && (o1 == o2)
                 && (GU.size g1 == GU.size g2)
 
+-- Helpfull to to visualize a smiles graph (e.g. in the repl> :exec "CC(CO)C")
+-- TODO replace with printTree from app/src/Prog/Trees.idr
+printTree' : Interpolation n => IGraph k e n -> Tree (Fin k) -> IO ()
+printTree' g = putStrLn . drawTree. map pretty
+  where
+    pretty : Fin k -> String
+    pretty x = "\{show x}: \{lab g x}"
+
+printSmilesIdxTree : String -> IO ()
+printSmilesIdxTree s =
+  case readSmiles' s of
+       Left e        => putStrLn "An error occured"
+       Right (G _ g) => traverse_ (printTree' g) $ dff' g
 --------------------------------------------------------------------------------
 --          Properties
 --------------------------------------------------------------------------------
@@ -87,9 +107,11 @@ testRoundtrips ls = property1 $
            failure
          Right True  => success
          Right False => do
-           footnote "Line: \{show n}"
-           footnote "SMILES:    \{s}"
-           footnote "Roundtrip: \{smilesRoundtrip s}"
+           footnote """
+                    Line:      \{show n}
+                    SMILES:    \{s}
+                    Roundtrip: \{smilesRoundtrip s}
+                    """
            failure
              ) (zip [1..(length ls)] ls)
 
@@ -118,6 +140,65 @@ testRoundtripsGen = property $ do
                    failure
 
 --------------------------------------------------------------------------------
+--          parityTests
+--------------------------------------------------------------------------------
+
+-- TODO: Add this as `anyFin` to Hedgehog.Internal.Gen
+posFin : (n : Nat) -> (0 prf : IsSucc n) => Gen (Fin n)
+posFin Z impossible
+posFin (S k) = fin (linearFin k)
+
+parameters (n          : Nat)
+           {auto 0 prf : IsSucc n}
+
+  -- TODO can we generat this more direct using hedgehog?
+  genVect : Gen (Vect n Nat)
+  genVect = pure (map finToNat (range {len = n}))
+
+  genSwap : Gen (Fin n, Fin n)
+  genSwap = MkPair <$> posFin n <*> posFin n
+
+  genMultipleSwaps : (nSwaps : Nat) -> Gen (List (Fin n, Fin n))
+  genMultipleSwaps nSwaps = Gen.list (linear nSwaps nSwaps) genSwap
+
+swap : (i, j : Fin n) -> Vect n a -> Vect n a
+swap i j v =
+  case i == j of
+    True => v
+    _    => replaceAt j (index i v) $ replaceAt i (index j v) v
+
+multipleSwaps : List (Fin n, Fin n) -> Vect n a -> Vect n a
+multipleSwaps swaps v = foldl (\acc, (i, j) => swap i j acc) v swaps
+
+-- TODO refactor using filter
+countEffectiveSwaps : List (Fin n, Fin n) -> Nat
+countEffectiveSwaps []                = 0
+countEffectiveSwaps ((i, j) :: swaps) =
+  case i == j of
+    True  =>     countEffectiveSwaps swaps
+    False => S $ countEffectiveSwaps swaps
+
+parityTest : Ord a => List (Fin n, Fin n) -> Vect n a -> Bool
+parityTest swaps v =
+  let v' = multipleSwaps swaps v
+      -- TODO currently initial is always Even..
+      initial        = permutationParity $ toList v
+      final          = permutationParity $ toList v'
+      expectedChange = natToParity $ countEffectiveSwaps swaps
+  in initial <+> expectedChange == final
+
+parityTestGen : Property
+parityTestGen = property $ do
+  n      <- forAll $ Gen.nat $ linear 0 10
+  v      <- forAll $ genVect (S n)
+  nSwaps <- forAll $ Gen.nat $ linear 0 10
+  swaps  <- forAll $ genMultipleSwaps (S n) nSwaps
+  case parityTest swaps v of
+    True  => success
+    False => do
+             footnote "Something went wrong"
+             failure
+--------------------------------------------------------------------------------
 --          props
 --------------------------------------------------------------------------------
 
@@ -130,5 +211,6 @@ propsIO = do
     [ ("testRoundtripsMini", testRoundtripsMini)
     , ("testRoundtripsZinc", zincProp)
     , ("testRoundtripsGen",  testRoundtripsGen)
+    , ("parityTest",         parityTestGen)
     ]
 

@@ -7,14 +7,16 @@
 
 module Text.Smiles.Writer
 
-import Text.Smiles.Types
-import Text.Smiles.Parser
-import Text.Molfile.Types
-import Data.Tree
-import Data.Array.Core
-import Data.Graph.Indexed.Query.DFS
 import Control.Monad.State
+
+import Data.Graph.Indexed.Query.DFS
+import Data.Tree
+
 import Derive.Prelude
+
+import Text.Molfile.Types
+import Text.Smiles.Parser
+import Text.Smiles.Types
 
 %default total
 %language ElabReflection
@@ -102,13 +104,14 @@ parameters (g : IGraph k SmilesBond SmilesAtom)
       renderChildren (h@(T c _) :: t) =
         "(\{renderBond c}\{renderTree h})\{renderChildren t}"
 
-  public export
+  export
   renderForest : Forest (Node k) -> String
   renderForest = fastConcat . intersperse "." . map renderTree
 
 -------------------------------------------------------------------------------
 -- Traversal Helpers
 -------------------------------------------------------------------------------
+
   -- rings = neighbours - parent - children
   computeNodeContext :
        Fin k
@@ -173,3 +176,35 @@ parameters (g : IGraph k SmilesBond SmilesAtom)
 export
 graphToSmiles : {k : _} -> IGraph k SmilesBond SmilesAtom -> String
 graphToSmiles g = renderForest g . buildNodeForest g $ dff' g
+
+--------------------------------------------------------------------------------
+--          parity
+--------------------------------------------------------------------------------
+export
+data Parity = Even | Odd
+
+%runElab deriveIndexed "Parity" [Eq, Show]
+
+-- TODO refactor using monoid
+export
+Semigroup Parity where
+  Even <+> p    = p
+  Odd  <+> Even = Odd
+  Odd  <+> Odd  = Even
+
+export
+natToParity : Nat -> Parity
+natToParity n =
+  case mod n 2 of
+    0 => Even
+    _ => Odd
+
+-- TODO: refactor by combining permutationParity and "<+>"
+countInversions : Ord a => List a -> Nat
+countInversions [] = 0
+countInversions (x :: xs) = count (< x) xs + countInversions xs
+
+export
+permutationParity : Ord a => List a -> Parity
+permutationParity = natToParity . countInversions
+
