@@ -47,17 +47,10 @@ record NodeState k where
 
 %runElab deriveIndexed "NodeState" [Eq]
 
-data Neighbour : Nat -> Type where
-  ExplicitAtom : Fin k -> Neighbour k
-  ImplicitH    : Neighbour k
-
-%runElab deriveIndexed "Neighbour" [Ord]
-
+-- TODO add marker for implicit hydrogen?
 record Neighbours (k : Nat) where
   constructor NBS
-  neighbours : List (Neighbour k)
-
-%runElab deriveIndexed "Neighbours" [Ord]
+  neighbours : List (Fin k)
 
 --------------------------------------------------------------------------------
 --          lists
@@ -98,9 +91,8 @@ permutParity : Ord a => List a -> Parity
 permutParity []        = natToParity 0
 permutParity (x :: xs) = natToParity (count (< x) xs) <+> permutParity xs
 
-covering
-isSameParity : List (Neighbour k) -> List (Neighbour k) -> Bool
-isSameParity xs ys = permutParity xs == permutParity ys
+isSameParity : Neighbours k -> Neighbours k -> Bool
+isSameParity (NBS xs) (NBS ys) = permutParity xs == permutParity ys
 
 invertChirality : Chirality -> Chirality
 invertChirality CW  = CCW
@@ -199,45 +191,48 @@ parameters {k : Nat}
       (SubsetAtom elem arom) => NBS [] --does this make sense?
       (Bracket atom)         => ?atomDOTneighbourList
 
--- case 1
--- what we might get
--- Test.Text.Smiles.Writer> :exec printSmilesIdxTree "N[C@H](O)C"
--- 0: N
--- │
--- └╼1: [C@H]
---   │
---   ├╼2: O
---   │
---   └╼3: C
---
--- case 2
--- how it is interpreted according to opensmiles
--- Test.Text.Smiles.Writer> :exec printSmilesIdxTree "N[C@]([H])(O)C"
--- 0: N
--- │
--- └╼1: [C@]
---   │
---   ├╼2: [H]
---   │
---   ├╼3: O
---   │
---   └╼4: C
--- sadly, an implicit H does not have its own nr.
+  hasOneImplicitH : Fin k -> Bool
+  hasOneImplicitH c =
+    case lab g c of
+      SubsetAtom elem arom => False -- TODO reasonable?
+      Bracket atom         => case atom.hydrogen of
+                                1 => True
+                                _ => False
 
-  ||| TODO fix issue with implicit hydrogens
+  ||| This still needs testing, but the idea is that given:
+  ||| 0: N
+  ||| │
+  ||| └╼1: [C@H]
+  |||   │
+  |||   ├╼2: O
+  |||   │
+  |||   └╼3: C
+  ||| we get: [0, 1, 2, 3]
+  |||
+  ||| 0: N
+  ||| │
+  ||| └╼1: [C@]
+  |||   │
+  |||   ├╼2: [H]
+  |||   │
+  |||   ├╼3: O
+  |||   │
+  |||   └╼4: C
+  ||| we get: -> [0,2,3,4]
+  ||| I believe, regardles of weather implicitH/invisibleParent are present
+  ||| their order does not change, thus the list can be built the same in
+  ||| any case. TODO show this works.
   currentNeighbourOrdering :
        Fin k
     -> Maybe (Fin k)
     -> List (Tree (Fin k))
     -> Neighbours k
-  currentNeighbourOrdering c (Just p) ts =
-    NBS      (ExplicitAtom p :: ExplicitAtom c :: map (ExplicitAtom . value) ts)
-  currentNeighbourOrdering c Nothing ts =
-    case invisibleParent c (map Data.Tree.Tree.value ts) of
-      Just ip =>
-        NBS (ExplicitAtom ip :: ExplicitAtom c :: map (ExplicitAtom . value) ts)
-      Nothing =>
-        NBS                    (ExplicitAtom c :: map (ExplicitAtom . value) ts)
+  currentNeighbourOrdering c p ts =
+    let implicitH = if hasOneImplicitH c then [c] else []
+        parent   = maybe [] pure p
+        ip       = maybe [] pure (invisibleParent c (map value ts))
+        children = map value ts
+      in NBS (ip ++ parent ++ implicitH ++ children)
 
 -------------------------------------------------------------------------------
 -- Traversal Helpers
@@ -269,7 +264,7 @@ parameters {k : Nat}
             maybe ors
                   (\edge => RD edge (R (allocateRingNr ors) Nothing) :: ors)
                   (mkEdge c n e)
-  covering -- TODO fix isSameparity
+
   zipL : Forest (Fin k) -> State (NodeState k) (Forest (Node k))
 
   -- Rings that were opened or closed at this node.
@@ -282,17 +277,15 @@ parameters {k : Nat}
   parentInfo : Maybe (Fin k) -> Fin k -> (Maybe SmilesBond, Bool)
   parentInfo p v = (p >>= elab g v, maybe False (bothAromatic v) p)
 
-  covering -- TODO fix isSameparity
   updateParity :
        (Neighbours k, Neighbours k)
     -> Fin k
     -> IGraph k SmilesBond SmilesAtom
-  updateParity (NBS xs, NBS ys) v =
+  updateParity (xs, ys) v =
     case isSameParity xs ys of
          True  => g
          False => updateNode v invertAtomChirality g
 
-  covering -- TODO fix isSameparity
   buildNodeTree : Tree (Fin k) -> State (NodeState k) (Tree (Node k))
   buildNodeTree t@(T v ts) = do
     pNS@(NS p openR) <- get
@@ -317,11 +310,9 @@ parameters {k : Nat}
   zipL []      = pure []
   zipL (t::ts) = [| buildNodeTree t :: zipL ts |]
 
-  covering -- TODO fix isSameparity
   buildNodeForest : Forest (Fin k) -> Forest (Node k)
   buildNodeForest ts = evalState (NS Nothing []) (zipL ts)
 
-covering -- TODO fix isSameparity
 export
 graphToSmiles : {k : _} -> IGraph k SmilesBond SmilesAtom -> String
 graphToSmiles g = renderForest g . buildNodeForest g $ dff' g
