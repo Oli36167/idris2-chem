@@ -38,6 +38,7 @@ smilesTests =
   , "[Cu+2].[O-]S(=O)(=O)[O-]"
   , "C1C(C2C(C3C(C4C(C5C(C6C(C7C(C8C(C9C(C%10C(CC)C%10C)C9C)C8C)C7C)C6C)C5C)C4C)C3C)C2C)C1"
   , "C12CC1C2"
+  , "C[S@](=O)c1ccccc1"
   ]
 
 covering
@@ -93,6 +94,7 @@ printSmilesIdxTree s =
   case readSmiles' s of
        Left e        => putStrLn "An error occured"
        Right (G _ g) => traverse_ (printTree' g) $ dff' g
+
 --------------------------------------------------------------------------------
 --          Properties
 --------------------------------------------------------------------------------
