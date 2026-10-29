@@ -47,31 +47,17 @@ record NodeState k where
 
 %runElab deriveIndexed "NodeState" [Eq]
 
-data ChiralNeighbour : Nat -> Type where
-  ImpH     : ChiralNeighbour n
-  Explicit : Fin n -> ChiralNeighbour n
-
-%runElab deriveIndexed "ChiralNeighbour" [Show,Eq,Ord]
-
 record ChildrenAndRings (k : Nat) where
   constructor CR
   children : List (Fin k)
   rings    : List (Fin k, SmilesBond)
+
 --------------------------------------------------------------------------------
 --          helpers
 --------------------------------------------------------------------------------
 
 getChildrenFinK : List (Tree (Fin k)) -> List (Fin k)
 getChildrenFinK = map value
-
---------------------------------------------------------------------------------
---          lists
---------------------------------------------------------------------------------
-
--- TODO make PR for Data.List?
--- This exists for SetList but not List.
-symDifference : Eq a => List a -> List a -> List a
-symDifference xs ys = union (xs \\ ys) (ys \\ xs)
 
 --------------------------------------------------------------------------------
 --          parity
@@ -198,9 +184,10 @@ parameters {k : Nat}
   hasOneImplicitH c =
     case lab g c of
       SubsetAtom elem arom => False
-      Bracket atom         => case atom.hydrogen of
-                                1 => True
-                                _ => False
+      Bracket atom         =>
+        case atom.hydrogen of
+          1 => True
+          _ => False
 
   ringNeighbours :
        Maybe (Fin k)
