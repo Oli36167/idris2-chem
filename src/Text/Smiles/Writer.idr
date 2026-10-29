@@ -53,6 +53,10 @@ data ChiralNeighbour : Nat -> Type where
 
 %runElab deriveIndexed "ChiralNeighbour" [Show,Eq,Ord]
 
+record ChildrenAndRings (k : Nat) where
+  constructor CR
+  children : List (Fin k)
+  rings    : List (Fin k, SmilesBond)
 --------------------------------------------------------------------------------
 --          helpers
 --------------------------------------------------------------------------------
@@ -100,7 +104,7 @@ permutParity []        = natToParity 0
 permutParity (x :: xs) = natToParity (count (< x) xs) <+> permutParity xs
 
 isSameParity : List (ChiralNeighbour k) -> List (ChiralNeighbour k) -> Bool
-isSameParity xs ys = permutParity xs == permutParity ys
+isSameParity = (==) `on` permutParity
 
 -- TODO what about all other cases?
 invertChirality : Chirality -> Chirality
@@ -187,13 +191,13 @@ parameters {k : Nat}
   initialNeighbourOrdering : Fin k -> List (ChiralNeighbour k)
   initialNeighbourOrdering v =
     case lab g v of
-      (SubsetAtom elem arom) => ?foo
+      (SubsetAtom elem arom) => []
       (Bracket atom)         => ?atomDOTneighbourList
 
   hasOneImplicitH : Fin k -> Bool
   hasOneImplicitH c =
     case lab g c of
-      SubsetAtom elem arom => False -- TODO reasonable?
+      SubsetAtom elem arom => False
       Bracket atom         => case atom.hydrogen of
                                 1 => True
                                 _ => False
@@ -213,14 +217,14 @@ parameters {k : Nat}
   currentNeighbourOrdering :
        Fin k
     -> Maybe (Fin k)
-    -> List (Tree (Fin k))
+    -> ChildrenAndRings k
     -> List (ChiralNeighbour k)
-  currentNeighbourOrdering c p ts =
+  currentNeighbourOrdering c p (CR children rings) =
     let implicitH = if hasOneImplicitH c then [ImpH] else []
         parent    = maybe [] (pure . Explicit) p
-        children  = map Explicit $ getChildrenFinK ts
-        rings     = map Explicit $ map fst $ ringNeighbours p c ts
-      in (parent ++ implicitH ++ children ++ rings)
+        children'  = map Explicit children
+        rings'     = map Explicit $ map fst $ rings
+      in (parent ++ implicitH ++ children' ++ rings')
 -------------------------------------------------------------------------------
 -- Traversal Helpers
 -------------------------------------------------------------------------------
@@ -231,9 +235,13 @@ parameters {k : Nat}
     -> Maybe (Fin k)
     -> Tree (Fin k)
     -> List (RingData k)
-    -> List (RingData k)
+    -> (List (RingData k), ChildrenAndRings k)
   computeNodeContext c p (T _ ts) openR =
-    foldl step openR $ ringNeighbours p c ts
+    let children         = getChildrenFinK ts
+        rings            = ringNeighbours p c ts
+        context          = foldl step openR rings
+        childrenAndRings = CR children rings
+    in (context, childrenAndRings)
     where
       -- close an existing ring or open a new one
       step : List (RingData k) -> (Fin k, SmilesBond) -> List (RingData k)
@@ -272,10 +280,10 @@ parameters {k : Nat}
     pNS@(NS p openR) <- get
 
     -- get info for current node
-    let openR'         = computeNodeContext v p t openR
+    let (openR', childrenAndRings) = computeNodeContext v p t openR
         ringChanges    = ringDelta openR openR'
         initialNOrd    = initialNeighbourOrdering v
-        currentNOrd    = currentNeighbourOrdering v p ts
+        currentNOrd    = currentNeighbourOrdering v p childrenAndRings
         g'             = updateParity initialNOrd currentNOrd v
         nodeLabel      = lab g' v
 
