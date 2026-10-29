@@ -47,6 +47,13 @@ record NodeState k where
 
 %runElab deriveIndexed "NodeState" [Eq]
 
+-- TODO replace Neibours k with a refined version of this:
+data ChiralNeighbour : Nat -> Type where
+  ImpH     : ChiralNeighbour n
+  Explicit : Fin n -> ChiralNeighbour n
+
+%runElab deriveIndexed "ChiralNeighbour" [Show,Eq,Ord]
+
 -- TODO add marker for implicit hydrogen?
 record Neighbours (k : Nat) where
   constructor NBS
@@ -94,6 +101,7 @@ permutParity (x :: xs) = natToParity (count (< x) xs) <+> permutParity xs
 isSameParity : Neighbours k -> Neighbours k -> Bool
 isSameParity (NBS xs) (NBS ys) = permutParity xs == permutParity ys
 
+-- TODO what about all other cases?
 invertChirality : Chirality -> Chirality
 invertChirality CW  = CCW
 invertChirality CCW = CW
@@ -175,20 +183,10 @@ parameters {k : Nat}
 --          neighbours
 --------------------------------------------------------------------------------
 
-  invisibleParent : Fin k -> List (Fin k) -> Maybe (Fin k)
-  -- TODO discuss:
-  -- c \\ n might be enough as we do not expect that the provisional
-  -- list of neighbours has more neighbours than the actual neighbours
-  invisibleParent c n =
-    case symDifference n (neighbours g c) of
-      [ip] => Just ip
-      _    => Nothing -- what if we have more than 1 parent?
-
-  -- TODO discuss
   initialNeighbourOrdering : Fin k -> Neighbours k
   initialNeighbourOrdering v =
     case lab g v of
-      (SubsetAtom elem arom) => NBS [] --does this make sense?
+      (SubsetAtom elem arom) => NBS []
       (Bracket atom)         => ?atomDOTneighbourList
 
   hasOneImplicitH : Fin k -> Bool
@@ -199,29 +197,6 @@ parameters {k : Nat}
                                 1 => True
                                 _ => False
 
-  ||| This still needs testing, but the idea is that given:
-  ||| 0: N
-  ||| │
-  ||| └╼1: [C@H]
-  |||   │
-  |||   ├╼2: O
-  |||   │
-  |||   └╼3: C
-  ||| we get: [0, 1, 2, 3]
-  |||
-  ||| 0: N
-  ||| │
-  ||| └╼1: [C@]
-  |||   │
-  |||   ├╼2: [H]
-  |||   │
-  |||   ├╼3: O
-  |||   │
-  |||   └╼4: C
-  ||| we get: -> [0,2,3,4]
-  ||| I believe, regardles of weather implicitH/invisibleParent are present
-  ||| their order does not change, thus the list can be built the same in
-  ||| any case. TODO show this works.
   currentNeighbourOrdering :
        Fin k
     -> Maybe (Fin k)
@@ -230,9 +205,14 @@ parameters {k : Nat}
   currentNeighbourOrdering c p ts =
     let implicitH = if hasOneImplicitH c then [c] else []
         parent   = maybe [] pure p
-        ip       = maybe [] pure (invisibleParent c (map value ts))
+        -- TODO make sure computeNodeContext uses the same fun
         children = map value ts
-      in NBS (ip ++ parent ++ implicitH ++ children)
+        -- TODO make sure computeNodeContext uses the same fun
+        rings    = map (\(n, _) => n) $
+                    filter
+                      (\(n, _) => not (elem n children) && not (Just n == p))
+                      (neighboursAsPairs g c)
+      in NBS (parent ++ implicitH ++ children ++ rings)
 
 -------------------------------------------------------------------------------
 -- Traversal Helpers
@@ -278,10 +258,11 @@ parameters {k : Nat}
   parentInfo p v = (p >>= elab g v, maybe False (bothAromatic v) p)
 
   updateParity :
-       (Neighbours k, Neighbours k)
+       Neighbours k
+    -> Neighbours k
     -> Fin k
     -> IGraph k SmilesBond SmilesAtom
-  updateParity (xs, ys) v =
+  updateParity xs ys v =
     case isSameParity xs ys of
          True  => g
          False => updateNode v invertAtomChirality g
@@ -293,10 +274,9 @@ parameters {k : Nat}
     -- get info for current node
     let openR'         = computeNodeContext v p t openR
         ringChanges    = ringDelta openR openR'
-        neighbourLists = ( initialNeighbourOrdering v
-                         , currentNeighbourOrdering v p ts
-                         )
-        g'             = updateParity neighbourLists v
+        initialNOrd    = initialNeighbourOrdering v
+        currentNOrd    = currentNeighbourOrdering v p ts
+        g'             = updateParity initialNOrd currentNOrd v
         nodeLabel      = lab g' v
 
     put (NS (Just v) openR') -- set current node as parent
