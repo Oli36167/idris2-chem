@@ -145,7 +145,7 @@ testRoundtripsGen = property $ do
 --          parityTests
 --------------------------------------------------------------------------------
 
--- TODO: Add this as `anyFin` to Hedgehog.Internal.Gen
+-- TODO: Add public export to `anyFin` in Hedgehog.Internal.Gen
 posFin : (n : Nat) -> (0 prf : IsSucc n) => Gen (Fin n)
 posFin Z impossible
 posFin (S k) = fin (linearFin k)
