@@ -47,16 +47,11 @@ record NodeState k where
 
 %runElab deriveIndexed "NodeState" [Eq]
 
--- TODO replace Neibours k with a refined version of this:
 data ChiralNeighbour : Nat -> Type where
   ImpH     : ChiralNeighbour n
   Explicit : Fin n -> ChiralNeighbour n
 
 %runElab deriveIndexed "ChiralNeighbour" [Show,Eq,Ord]
-
-record Neighbours (k : Nat) where
-  constructor NBS
-  neighbours : List (Fin k)
 
 --------------------------------------------------------------------------------
 --          helpers
@@ -104,8 +99,8 @@ permutParity : Ord a => List a -> Parity
 permutParity []        = natToParity 0
 permutParity (x :: xs) = natToParity (count (< x) xs) <+> permutParity xs
 
-isSameParity : Neighbours k -> Neighbours k -> Bool
-isSameParity (NBS xs) (NBS ys) = permutParity xs == permutParity ys
+isSameParity : List (ChiralNeighbour k) -> List (ChiralNeighbour k) -> Bool
+isSameParity xs ys = permutParity xs == permutParity ys
 
 -- TODO what about all other cases?
 invertChirality : Chirality -> Chirality
@@ -189,10 +184,10 @@ parameters {k : Nat}
 --          neighbours
 --------------------------------------------------------------------------------
 
-  initialNeighbourOrdering : Fin k -> Neighbours k
+  initialNeighbourOrdering : Fin k -> List (ChiralNeighbour k)
   initialNeighbourOrdering v =
     case lab g v of
-      (SubsetAtom elem arom) => NBS []
+      (SubsetAtom elem arom) => ?foo
       (Bracket atom)         => ?atomDOTneighbourList
 
   hasOneImplicitH : Fin k -> Bool
@@ -213,19 +208,19 @@ parameters {k : Nat}
     (\(n, _) => not (elem n (getChildrenFinK ts)) && not (Just n == p))
     (neighboursAsPairs g c)
 
+  -- TODO make sure (with types) computeNodeContext uses the same funs
+  -- (getChildrenFinK and ringNeighbours)
   currentNeighbourOrdering :
        Fin k
     -> Maybe (Fin k)
     -> List (Tree (Fin k))
-    -> Neighbours k
+    -> List (ChiralNeighbour k)
   currentNeighbourOrdering c p ts =
-    let implicitH = if hasOneImplicitH c then [c] else []
-        parent    = maybe [] pure p
-        -- TODO make sure (with types) computeNodeContext uses the same fun
-        ringsFinK = map fst $ ringNeighbours p c ts
-      -- TODO make sure (with types) getChildrenFinK is used in ringNeighbours
-      in NBS (parent ++ implicitH ++ getChildrenFinK ts ++ ringsFinK)
-
+    let implicitH = if hasOneImplicitH c then [ImpH] else []
+        parent    = maybe [] (pure . Explicit) p
+        children  = map Explicit $ getChildrenFinK ts
+        rings     = map Explicit $ map fst $ ringNeighbours p c ts
+      in (parent ++ implicitH ++ children ++ rings)
 -------------------------------------------------------------------------------
 -- Traversal Helpers
 -------------------------------------------------------------------------------
@@ -263,8 +258,8 @@ parameters {k : Nat}
   parentInfo p v = (p >>= elab g v, maybe False (bothAromatic v) p)
 
   updateParity :
-       Neighbours k
-    -> Neighbours k
+       List (ChiralNeighbour k)
+    -> List (ChiralNeighbour k)
     -> Fin k
     -> IGraph k SmilesBond SmilesAtom
   updateParity xs ys v =
