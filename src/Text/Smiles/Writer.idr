@@ -54,10 +54,16 @@ data ChiralNeighbour : Nat -> Type where
 
 %runElab deriveIndexed "ChiralNeighbour" [Show,Eq,Ord]
 
--- TODO add marker for implicit hydrogen?
 record Neighbours (k : Nat) where
   constructor NBS
   neighbours : List (Fin k)
+
+--------------------------------------------------------------------------------
+--          helpers
+--------------------------------------------------------------------------------
+
+getChildrenFinK : List (Tree (Fin k)) -> List (Fin k)
+getChildrenFinK = map value
 
 --------------------------------------------------------------------------------
 --          lists
@@ -197,6 +203,16 @@ parameters {k : Nat}
                                 1 => True
                                 _ => False
 
+  ringNeighbours :
+       Maybe (Fin k)
+    -> Fin k
+    -> List (Tree (Fin k))
+    -> List (Fin k, SmilesBond)
+  ringNeighbours p c ts =
+    filter
+    (\(n, _) => not (elem n (getChildrenFinK ts)) && not (Just n == p))
+    (neighboursAsPairs g c)
+
   currentNeighbourOrdering :
        Fin k
     -> Maybe (Fin k)
@@ -204,15 +220,11 @@ parameters {k : Nat}
     -> Neighbours k
   currentNeighbourOrdering c p ts =
     let implicitH = if hasOneImplicitH c then [c] else []
-        parent   = maybe [] pure p
-        -- TODO make sure computeNodeContext uses the same fun
-        children = map value ts
-        -- TODO make sure computeNodeContext uses the same fun
-        rings    = map (\(n, _) => n) $
-                    filter
-                      (\(n, _) => not (elem n children) && not (Just n == p))
-                      (neighboursAsPairs g c)
-      in NBS (parent ++ implicitH ++ children ++ rings)
+        parent    = maybe [] pure p
+        -- TODO make sure (with types) computeNodeContext uses the same fun
+        ringsFinK = map fst $ ringNeighbours p c ts
+      -- TODO make sure (with types) getChildrenFinK is used in ringNeighbours
+      in NBS (parent ++ implicitH ++ getChildrenFinK ts ++ ringsFinK)
 
 -------------------------------------------------------------------------------
 -- Traversal Helpers
@@ -226,15 +238,8 @@ parameters {k : Nat}
     -> List (RingData k)
     -> List (RingData k)
   computeNodeContext c p (T _ ts) openR =
-    foldl step openR filtered
+    foldl step openR $ ringNeighbours p c ts
     where
-      filtered : List (Fin k, SmilesBond)
-      filtered =
-        let children = map value ts
-        in filter
-             (\(n, _) => not (elem n children) && not (Just n == p))
-             (neighboursAsPairs g c)
-
       -- close an existing ring or open a new one
       step : List (RingData k) -> (Fin k, SmilesBond) -> List (RingData k)
       step ors (n, e) =
