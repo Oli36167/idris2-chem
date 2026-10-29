@@ -5,6 +5,7 @@ import Derive.Finite
 import Derive.Prelude
 import Derive.Refined
 
+
 %default total
 %language ElabReflection
 
@@ -72,6 +73,19 @@ Interpolation Chirality where
 
 %runElab derive "Chirality" [Ord,Eq,Show,Finite]
 
+public export
+data ChiralNeighbour : Nat -> Type where
+  ImpH     : ChiralNeighbour n
+  Explicit : Fin n -> ChiralNeighbour n
+
+%runElab deriveIndexed "ChiralNeighbour" [Show,Eq,Ord]
+
+public export
+record ChiralityData (k : Nat) where
+  constructor MkCD
+  chirality : Chirality
+  neighbours : List (ChiralNeighbour k)
+
 --------------------------------------------------------------------------------
 --          Atoms
 --------------------------------------------------------------------------------
@@ -109,7 +123,9 @@ data SmilesAtom : Type where
     -> (arom       : Bool)
     -> {auto 0 prf : ValidSubset elem arom}
     -> SmilesAtom
-  Bracket : Atom AromIsotope Charge () () HCount () Chirality () -> SmilesAtom
+  Bracket :
+       Atom AromIsotope Charge () () HCount () Chirality ()
+    -> SmilesAtom
 
 %runElab derive "SmilesAtom" [Show,Eq]
 
