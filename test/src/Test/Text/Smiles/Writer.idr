@@ -44,7 +44,7 @@ smilesTests =
 covering
 loadZinc : IO (List String)
 loadZinc = do
-  Right content <- readFile "resources/zinc.txt"
+  Right content <- readFile "../resources/zinc.txt"
     | Left err => do
         printLn err
         pure []
@@ -193,6 +193,26 @@ parityTestGen = property $ do
     False => do
              footnote "Something went wrong"
              failure
+
+--------------------------------------------------------------------------------
+--          debugging
+--------------------------------------------------------------------------------
+
+covering
+debugZincFirstFail : IO ()
+debugZincFirstFail = do
+  zinc <- loadZinc
+  putStrLn "hello"
+  let indexed = zip [1 .. length zinc] zinc
+  for_ indexed $ \(n, s) => do
+    case sameGraphAfterRoundtrip s of
+      Right True => pure ()
+      _ => do
+        putStrLn "FAIL at line \{show n}"
+        putStrLn s
+        putStrLn "roundtrip: \{smilesRoundtrip s}"
+        pure ()
+
 --------------------------------------------------------------------------------
 --          props
 --------------------------------------------------------------------------------
