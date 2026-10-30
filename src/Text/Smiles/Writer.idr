@@ -13,6 +13,7 @@ import Data.Graph.Indexed.Util
 import Data.Graph.Indexed.Query.DFS
 import Data.Tree
 
+import Debug.Trace
 import Decidable.Equality
 import Derive.Prelude
 
@@ -123,6 +124,7 @@ invertAtomChirality : SmilesAtom -> SmilesAtom
 invertAtomChirality (SubsetAtom elem arom) = SubsetAtom elem arom
 invertAtomChirality (Bracket atom) =
   Bracket $ { chirality := invertChiralityData atom.chirality } atom
+
 
 ------------------------------------------------------------------------------
 -- SMILES Rendering
