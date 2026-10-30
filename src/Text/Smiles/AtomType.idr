@@ -9,7 +9,7 @@ import Text.Smiles.Types
 ||| implicit hydrogen count
 public export
 0 SmilesAtomAT : Type
-SmilesAtomAT = Atom AromIsotope Charge () () HCount AtomType Chirality ()
+SmilesAtomAT = Atom AromIsotope Charge () () HCount AtomType ChiralityData ()
 
 export %inline
 Cast SmilesAtomAT Elem where
@@ -62,15 +62,18 @@ addAromaticBonds P  2 bs = adjNitrogen2 bs
 addAromaticBonds As 2 bs = adjNitrogen2 bs
 addAromaticBonds _  n bs = {single $= (+n)} bs
 
+emptyChirality : ChiralityData
+emptyChirality = MkCD 0 None []
+
 -- compute the atom type and implicit hydrogen count from
 -- a SMILES atom and the list of bonds connected to it
-calcAT : Fin k -> Adj k SmilesBond SmilesAtom -> SmilesAtomAT
+calcAT : {k : Nat} -> Fin k -> Adj k SmilesBond SmilesAtom -> SmilesAtomAT
 calcAT n (A at@(SubsetAtom e a) ns) =
   let iso     := MkAI e Nothing a
       arom    := count (Arom ==) ns
       bonds   := addAromaticBonds e arom $ foldMap sbToBonds ns
       (h,tpe) := atomTypeAndHydrogens e NoRadical 0 bonds
-   in MkAtom iso 0 () () h tpe None ()
+   in MkAtom iso 0 () () h tpe emptyChirality ()
 
 calcAT n (A (Bracket x) ns) =
   let e    := cast {to = Elem} x.elem

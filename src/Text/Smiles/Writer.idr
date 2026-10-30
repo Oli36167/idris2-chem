@@ -13,6 +13,7 @@ import Data.Graph.Indexed.Util
 import Data.Graph.Indexed.Query.DFS
 import Data.Tree
 
+import Decidable.Equality
 import Derive.Prelude
 
 import Text.Molfile.Types
@@ -56,9 +57,18 @@ record ChildrenAndRings (k : Nat) where
 --          helpers
 --------------------------------------------------------------------------------
 
-getChildrenFinK : List (Tree (Fin k)) -> List (Fin k)
+getChildrenFinK : {k : Nat} -> List (Tree (Fin k)) -> List (Fin k)
 getChildrenFinK = map value
 
+export
+neighboursFor :
+     (k : Nat)
+  -> ChiralityData
+  -> Maybe (List (ChiralNeighbour k))
+neighboursFor k (MkCD k' ch ns) =
+  case decEq k k' of
+    Yes Refl => Just ns
+    No _     => Nothing
 --------------------------------------------------------------------------------
 --          parity
 --------------------------------------------------------------------------------
@@ -89,7 +99,11 @@ permutParity : Ord a => List a -> Parity
 permutParity []        = natToParity 0
 permutParity (x :: xs) = natToParity (count (< x) xs) <+> permutParity xs
 
-isSameParity : List (ChiralNeighbour k) -> List (ChiralNeighbour k) -> Bool
+isSameParity :
+     {k : Nat}
+  -> List (ChiralNeighbour k)
+  -> List (ChiralNeighbour k)
+  -> Bool
 isSameParity = (==) `on` permutParity
 
 -- TODO what about all other cases?
@@ -98,14 +112,17 @@ invertChirality CW  = CCW
 invertChirality CCW = CW
 invertChirality c   = c
 
+invertChiralityData : ChiralityData -> ChiralityData
+invertChiralityData (MkCD k ch ns) =  MkCD k (invertChirality ch) ns
+
 accessSmilesAtom : SmilesAtom -> SmilesAtom
 accessSmilesAtom (SubsetAtom elem arom) = SubsetAtom elem arom
 accessSmilesAtom (Bracket atom) = Bracket atom
 
 invertAtomChirality : SmilesAtom -> SmilesAtom
 invertAtomChirality (SubsetAtom elem arom) = SubsetAtom elem arom
-invertAtomChirality (Bracket atom)         =
-  Bracket $ { chirality := invertChirality atom.chirality } atom
+invertAtomChirality (Bracket atom) =
+  Bracket $ { chirality := invertChiralityData atom.chirality } atom
 
 ------------------------------------------------------------------------------
 -- SMILES Rendering
@@ -117,14 +134,15 @@ bondSymbol bothArom bo =
      then ""
      else interpolate bo
 
-ringNr : RingData k -> RingNr
+ringNr : {k : Nat} -> RingData k -> RingNr
 ringNr (RD _ (R nr _)) = nr
 
-renderBond : Node k -> String
+renderBond : {k : Nat} -> Node k -> String
 renderBond (MkNode _ pE bothArom _) = maybe "" (bondSymbol bothArom) pE
 
 findClosableOpenRing :
-     Fin k -- neighbour
+     {k : Nat}
+  -> Fin k -- neighbour
   -> Fin k -- current
   -> List (RingData k)
   -> Maybe (RingData k)
@@ -134,7 +152,7 @@ findClosableOpenRing n c =
     (node1 e == c && node2 e == n) ||
     (node1 e == n && node2 e == c))
 
-allocateRingNr : List (RingData k) -> RingNr
+allocateRingNr : {k :Nat} -> List (RingData k) -> RingNr
 allocateRingNr ors =
    fromMaybe 0 $
      find (\x => not (elem x (map ringNr ors)))
@@ -173,12 +191,11 @@ parameters {k : Nat}
 --------------------------------------------------------------------------------
 --          neighbours
 --------------------------------------------------------------------------------
-
   initialNeighbourOrdering : Fin k -> List (ChiralNeighbour k)
   initialNeighbourOrdering v =
     case lab g v of
-      (SubsetAtom elem arom) => []
-      (Bracket atom)         => ?atomDOTneighbourList
+      SubsetAtom _ _ => []
+      Bracket atom => fromMaybe [] (neighboursFor k atom.chirality)
 
   hasOneImplicitH : Fin k -> Bool
   hasOneImplicitH c =

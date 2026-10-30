@@ -167,7 +167,7 @@ record SSTCK (q : Type) where
   dob         : Ref q DOB
   mass        : Ref q (Maybe MassNr)
   elem        : Ref q AromElem
-  chirality   : Ref q Chirality
+  chirality   : Ref q ChiralityData
   hcount      : Ref q HCount
   charge      : Ref q Charge
   error_      : Ref q (Maybe $ BBErr SmilesErr)
@@ -184,7 +184,7 @@ init n buf = T1.do
   db  <- ref1 Dot
   ms  <- ref1 Nothing
   el  <- ref1 (MkAE C False)
-  cy  <- ref1 (the Chirality None)
+  cy  <- ref1 (MkCD 0 None [])
   hc  <- ref1 (the HCount 0)
   ch  <- ref1 (the Charge 0)
   er  <- ref1 Nothing
@@ -231,10 +231,10 @@ bracket : (sk : SSTCK q) => F1 q SST
 bracket t =
   let m  # t := replace1 sk.mass Nothing t
       e  # t := read1 sk.elem t
-      cy # t := replace1 sk.chirality None t
+      cy # t := replace1 sk.chirality (MkCD 0 None []) t
       h  # t := replace1 sk.hcount 0 t
       ch # t := replace1 sk.charge 0 t
-   in onAtom (bracket (aromIsotope m e) cy h ch) sk t
+   in onAtom (bracketData (aromIsotope m e) cy h ch) sk t
 
 mass : (RExp True, Step q SSz SSTCK)
 mass = bytes (plus digit) wrt
@@ -245,8 +245,28 @@ mass = bytes (plus digit) wrt
 elem : List (RExp True, Step q SSz SSTCK)
 elem = writeVals interpolate elem BChiral values
 
+writeChiralityVal :
+     HasBytes s
+  => (field : s q -> Ref q ChiralityData)
+  -> Index r
+  -> Chirality
+  -> Maybe (RExp True, Step q r s)
+writeChiralityVal field res ch =
+  val interpolate
+      (\v, x => writeAs (field x) (MkCD 0 v []) res)
+      ch
+
+writeChiralityVals :
+     HasBytes s
+  => (field : s q -> Ref q ChiralityData)
+  -> Index r
+  -> List Chirality
+  -> List (RExp True, Step q r s)
+writeChiralityVals field res =
+  mapMaybe (writeChiralityVal field res)
+
 chirality : List (RExp True, Step q SSz SSTCK)
-chirality = writeVals interpolate chirality BHCount values
+chirality = writeChiralityVals chirality BHCount values
 
 hc : List (RExp True, Step q SSz SSTCK)
 hc = step "H1" (wrt 1) :: vals encodeH (\v => \sk,t => wrt v t) values
