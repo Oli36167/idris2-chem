@@ -83,11 +83,24 @@ sameGraphAfterRoundtrip s = do
 
 -- Helpfull to to visualize a smiles graph (e.g. in the repl> :exec "CC(CO)C")
 -- TODO replace with printTree from app/src/Prog/Trees.idr
-printTree' : Interpolation n => IGraph k e n -> Tree (Fin k) -> IO ()
-printTree' g = putStrLn . drawTree. map pretty
+-- printTree' : Interpolation n => IGraph k e n -> Tree (Fin k) -> IO ()
+-- printTree' g = putStrLn . drawTree. map pretty
+--   where
+--     pretty : Fin k -> String
+--     pretty x = "\{show x}: \{lab g x} Neighbours \{}"
+
+printTree' : Interpolation SmilesAtom => IGraph k e SmilesAtom -> Tree (Fin k) -> IO ()
+printTree' g = putStrLn . drawTree . map pretty
   where
     pretty : Fin k -> String
-    pretty x = "\{show x}: \{lab g x}"
+    pretty x =
+      let a = lab g x
+        in case a of
+             SubsetAtom elem arom =>
+               "\{show x}: \{a}"
+
+             Bracket atom =>
+               "\{show x}: \{a}  chiral=\{show atom.chirality.chirality}  neighbours=\{show atom.chirality.neighbours}"
 
 printSmilesIdxTree : String -> IO ()
 printSmilesIdxTree s =
@@ -199,19 +212,31 @@ parityTestGen = property $ do
 --------------------------------------------------------------------------------
 
 covering
+debugHelper : String -> IO ()
+debugHelper s =
+  case sameGraphAfterRoundtrip s of
+    Right True => pure ()
+    _ => do
+      -- putStrLn "FAIL at line \{show n}"
+      putStrLn s
+      putStrLn "roundtrip: \{smilesRoundtrip s}"
+      putStrLn "double roundtrip \{smilesRoundtrip $ smilesRoundtrip s}"
+      printSmilesIdxTree s
+      printSmilesIdxTree $ smilesRoundtrip s
+      printSmilesIdxTree $ smilesRoundtrip $ smilesRoundtrip s
+      pure ()
+
+covering
+miniDebugParityTest : IO ()
+miniDebugParityTest = debugHelper "N[C@H](O)C"
+
+covering
 debugZincFirstFail : IO ()
 debugZincFirstFail = do
   zinc <- loadZinc
   putStrLn "hello"
   let indexed = zip [1 .. length zinc] zinc
-  for_ indexed $ \(n, s) => do
-    case sameGraphAfterRoundtrip s of
-      Right True => pure ()
-      _ => do
-        putStrLn "FAIL at line \{show n}"
-        putStrLn s
-        putStrLn "roundtrip: \{smilesRoundtrip s}"
-        pure ()
+  for_ indexed $ \(n, s) => do debugHelper s
 
 --------------------------------------------------------------------------------
 --          props
