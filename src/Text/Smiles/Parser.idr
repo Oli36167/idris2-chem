@@ -1,13 +1,17 @@
 module Text.Smiles.Parser
 
 import Chem
+import Control.Monad.State
 import Data.Finite
+import Data.Graph.Indexed.Query.DFS
 import Data.SnocVect
+import Data.Tree
 import Derive.Prelude
 import Syntax.T1
 import Text.ILex
 import Text.ILex.State.Derive
 import Text.Smiles.Types
+import Text.Smiles.Traversal
 
 %default total
 %language ElabReflection
@@ -167,7 +171,7 @@ record SSTCK (q : Type) where
   dob         : Ref q DOB
   mass        : Ref q (Maybe MassNr)
   elem        : Ref q AromElem
-  chirality   : Ref q Chirality
+  chirality   : Ref q ChiralityData
   hcount      : Ref q HCount
   charge      : Ref q Charge
   error_      : Ref q (Maybe $ BBErr SmilesErr)
@@ -184,7 +188,7 @@ init n buf = T1.do
   db  <- ref1 Dot
   ms  <- ref1 Nothing
   el  <- ref1 (MkAE C False)
-  cy  <- ref1 (the Chirality None)
+  cy  <- ref1 (MkCD 0 None [])
   hc  <- ref1 (the HCount 0)
   ch  <- ref1 (the Charge 0)
   er  <- ref1 Nothing
@@ -231,10 +235,10 @@ bracket : (sk : SSTCK q) => F1 q SST
 bracket t =
   let m  # t := replace1 sk.mass Nothing t
       e  # t := read1 sk.elem t
-      cy # t := replace1 sk.chirality None t
+      cy # t := replace1 sk.chirality (MkCD 0 None []) t
       h  # t := replace1 sk.hcount 0 t
       ch # t := replace1 sk.charge 0 t
-   in onAtom (bracket (aromIsotope m e) cy h ch) sk t
+   in onAtom (bracketData (aromIsotope m e) cy h ch) sk t
 
 mass : (RExp True, Step q SSz SSTCK)
 mass = bytes (plus digit) wrt
@@ -245,8 +249,28 @@ mass = bytes (plus digit) wrt
 elem : List (RExp True, Step q SSz SSTCK)
 elem = writeVals interpolate elem BChiral values
 
+writeChiralityVal :
+     HasBytes s
+  => (field : s q -> Ref q ChiralityData)
+  -> Index r
+  -> Chirality
+  -> Maybe (RExp True, Step q r s)
+writeChiralityVal field res ch =
+  val interpolate
+      (\v, x => writeAs (field x) (MkCD 0 v []) res)
+      ch
+
+writeChiralityVals :
+     HasBytes s
+  => (field : s q -> Ref q ChiralityData)
+  -> Index r
+  -> List Chirality
+  -> List (RExp True, Step q r s)
+writeChiralityVals field res =
+  mapMaybe (writeChiralityVal field res)
+
 chirality : List (RExp True, Step q SSz SSTCK)
-chirality = writeVals interpolate chirality BHCount values
+chirality = writeChiralityVals chirality BHCount values
 
 hc : List (RExp True, Step q SSz SSTCK)
 hc = step "H1" (wrt 1) :: vals encodeH (\v => \sk,t => wrt v t) values
@@ -353,6 +377,62 @@ test s =
     Right x => for_ x $ \(G _ g) => putStrLn (pretty interpolate interpolate g)
     Left x  => putStrLn "\{x}"
 
+-------------
+updateNodeChirality :
+     {k : Nat}
+  -> Fin k
+  -> List (ChiralNeighbour k)
+  -> IGraph k SmilesBond SmilesAtom
+  -> IGraph k SmilesBond SmilesAtom
+updateNodeChirality v nbs g =
+  case lab g v of
+    SubsetAtom _ _ => g
+    Bracket atom =>
+      let old = atom.chirality
+          newChirality =
+            case old.chirality of
+              None => old
+              _    => MkCD k old.chirality nbs
+          atom' = { chirality := newChirality } atom
+       in updateNode v (const (Bracket atom')) g
+
+annotateForest :
+     {k : Nat}
+  -> Forest (Fin k)
+  -> IGraph k SmilesBond SmilesAtom
+  -> State (NodeState k) (IGraph k SmilesBond SmilesAtom)
+
+annotateNode :
+     {k : Nat}
+  -> Tree (Fin k)
+  -> IGraph k SmilesBond SmilesAtom
+  -> State (NodeState k) (IGraph k SmilesBond SmilesAtom)
+annotateNode t@(T v ts) g = do
+  pNS@(MkNodeState p openR) <- get
+
+  let (openR', childrenAndRings) = computeNodeContext g v p t openR
+      nbs = currentNeighbourOrdering g v p childrenAndRings
+      g'  = updateNodeChirality v nbs g
+
+  put (MkNodeState (Just v) openR')
+  g'' <- annotateForest ts g'
+  put pNS
+
+  pure g''
+
+annotateForest [] g = pure g
+annotateForest (t :: ts) g = do
+  g' <- annotateNode t g
+  annotateForest ts g'
+
+annotateChiralityData :
+     {k : Nat}
+  -> IGraph k SmilesBond SmilesAtom
+  -> IGraph k SmilesBond SmilesAtom
+annotateChiralityData {k} g =
+  evalState (the (NodeState k) (MkNodeState Nothing [])) (annotateForest (dff' g) g)
+
+
 export
 readSmilesFrom :
      {auto has : Has SmilesParseErr es}
@@ -361,11 +441,12 @@ readSmilesFrom :
   -> ChemRes es SmilesGraph
 readSmilesFrom o s =
   case parseSmiles o s of
-    Left  x   => Left (inject x)
-    Right []  => Right (G 0 empty)
-    Right [g] => Right g
-    Right _   =>
+    Left  x       => Left (inject x)
+    Right []      => Right (G 0 empty)
+    Right [G k g] => Right (G k (annotateChiralityData g))
+    Right _       =>
       Left (inject $ toParseError o s (B (Custom ManyEntries) NoBounds))
+---------------
 
 export %inline
 readSmiles : Has SmilesParseErr es => String -> ChemRes es SmilesGraph

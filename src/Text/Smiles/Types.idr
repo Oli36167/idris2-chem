@@ -1,9 +1,11 @@
 module Text.Smiles.Types
 
 import Chem
+import Decidable.Equality
 import Derive.Finite
 import Derive.Prelude
 import Derive.Refined
+
 
 %default total
 %language ElabReflection
@@ -72,6 +74,46 @@ Interpolation Chirality where
 
 %runElab derive "Chirality" [Ord,Eq,Show,Finite]
 
+public export
+data ChiralNeighbour : Nat -> Type where
+  ImpH     : ChiralNeighbour n
+  Explicit : Fin n -> ChiralNeighbour n
+
+%runElab deriveIndexed "ChiralNeighbour" [Show,Eq,Ord]
+
+public export
+record ChiralityData where
+  constructor MkCD
+  arity      : Nat
+  chirality  : Chirality
+  neighbours : List (ChiralNeighbour arity)
+
+%runElab deriveIndexed "ChiralityData" [Show]
+
+export
+Interpolation ChiralityData where
+  interpolate (MkCD _ ch _) = interpolate ch
+
+export
+Eq ChiralityData where
+  (==) (MkCD k1 c1 ns1) (MkCD k2 c2 ns2) =
+    case decEq k1 k2 of
+      Yes Refl => c1 == c2 && ns1 == ns2
+      No _     => False
+
+export
+Ord ChiralityData where
+  compare (MkCD k1 c1 ns1) (MkCD k2 c2 ns2) =
+    case compare k1 k2 of
+      EQ =>
+        case decEq k1 k2 of
+          Yes Refl =>
+            case compare c1 c2 of
+              EQ => compare ns1 ns2
+              result => result
+          No _ => EQ -- unreachable
+      result => result
+
 --------------------------------------------------------------------------------
 --          Atoms
 --------------------------------------------------------------------------------
@@ -109,7 +151,9 @@ data SmilesAtom : Type where
     -> (arom       : Bool)
     -> {auto 0 prf : ValidSubset elem arom}
     -> SmilesAtom
-  Bracket : Atom AromIsotope Charge () () HCount () Chirality () -> SmilesAtom
+  Bracket :
+       Atom AromIsotope Charge () () HCount () ChiralityData ()
+    -> SmilesAtom
 
 %runElab derive "SmilesAtom" [Show,Eq]
 
@@ -146,8 +190,16 @@ Cast SmilesAtom AromElem where
   cast = cast . cast {to = AromIsotope}
 
 export %inline
+bracketData : AromIsotope -> ChiralityData -> HCount -> Charge -> SmilesAtom
+bracketData a c h ch = Bracket (MkAtom a ch () () h () c ())
+
+export %inline
 bracket : AromIsotope -> Chirality -> HCount -> Charge -> SmilesAtom
-bracket a c h ch = Bracket (MkAtom a ch () () h () c ())
+bracket a c h ch = bracketData a (MkCD 0 c []) h ch
+
+-- export %inline
+-- bracket : AromIsotope -> ChiralityData -> HCount -> Charge -> SmilesAtom
+-- bracket a c h ch = Bracket (MkAtom a ch () () h () c ())
 
 export %inline
 isArom : SmilesAtom -> Bool
@@ -252,3 +304,38 @@ Interpolation Ring where
 public export
 0 SmilesGraph : Type
 SmilesGraph = Graph SmilesBond SmilesAtom
+
+------------------------------------------------------------------------------
+-- Writer, wip
+------------------------------------------------------------------------------
+
+public export
+record RingData k where
+  constructor RD
+  edge : Edge k SmilesBond
+  ring : Ring
+
+%runElab deriveIndexed "RingData" [Eq]
+
+public export
+record Node k where
+  constructor MkNode
+  label : SmilesAtom
+  parentEdge : Maybe SmilesBond
+  bothArom : Bool
+  rings : List (RingData k)
+
+public export
+record NodeState k where
+  constructor MkNodeState
+  parent : Maybe (Fin k)
+  openRings : List (RingData k)
+
+%runElab deriveIndexed "NodeState" [Eq]
+
+public export
+record ChildrenAndRings (k : Nat) where
+  constructor CR
+  children : List (Fin k)
+  rings    : List (Fin k, SmilesBond)
+
