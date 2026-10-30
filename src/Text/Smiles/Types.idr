@@ -304,3 +304,38 @@ Interpolation Ring where
 public export
 0 SmilesGraph : Type
 SmilesGraph = Graph SmilesBond SmilesAtom
+
+------------------------------------------------------------------------------
+-- Writer, wip
+------------------------------------------------------------------------------
+
+public export
+record RingData k where
+  constructor RD
+  edge : Edge k SmilesBond
+  ring : Ring
+
+%runElab deriveIndexed "RingData" [Eq]
+
+public export
+record Node k where
+  constructor MkNode
+  label : SmilesAtom
+  parentEdge : Maybe SmilesBond
+  bothArom : Bool
+  rings : List (RingData k)
+
+public export
+record NodeState k where
+  constructor MkNodeState
+  parent : Maybe (Fin k)
+  openRings : List (RingData k)
+
+%runElab deriveIndexed "NodeState" [Eq]
+
+public export
+record ChildrenAndRings (k : Nat) where
+  constructor CR
+  children : List (Fin k)
+  rings    : List (Fin k, SmilesBond)
+
