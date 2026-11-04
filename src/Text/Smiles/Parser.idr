@@ -256,7 +256,7 @@ writeChiralityVal :
   -> Chirality
   -> Maybe (RExp True, Step q r s)
 writeChiralityVal field res ch =
-  val interpolate
+  Text.ILex.Interfaces.val interpolate
       (\v, x => writeAs (field x) (MkCD 0 v []) res)
       ch
 

@@ -140,7 +140,6 @@ testRoundtripsZincIO = do
   zinc <- loadZinc
   pure (testRoundtrips zinc)
 
-<<<<<<< HEAD
 covering
 testRoundtripsGen : Property
 testRoundtripsGen = property $ do
