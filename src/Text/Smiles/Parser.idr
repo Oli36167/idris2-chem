@@ -51,14 +51,19 @@ SmilesParseErr = ParseError SmilesErr
 data DOB : Type where
   No  : DOB
   Dot : DOB
-  Bnd : SmilesBond -> DOB
+  Bnd : SmilesBondOrder -> DOB
 
 record RingInfo n where
   constructor R
   start : Fin n
+  rix   : RingIdx
   nr    : RingNr
   atom  : SmilesAtom
+<<<<<<< HEAD
   bond  : Maybe SmilesBond
+=======
+  bond  : Maybe SmilesBondOrder
+>>>>>>> smiles-generator
   pos   : BytePos
 
 record AtomInfo n where
@@ -66,15 +71,27 @@ record AtomInfo n where
   node  : Fin n
   atom  : SmilesAtom
 
-smilesBond : (xa,ya : Bool) -> SmilesBond
-smilesBond True True = Arom
-smilesBond _    _    = Sngl
+record ST where
+  constructor S
+  cnt    : Nat
+  rix    : RingIdx
+  stck   : List (AtomInfo cnt)
+  atoms  : SnocVect cnt SmilesAtom
+  bonds  : List (Edge cnt SmilesBond)
+  rings  : List (RingInfo cnt)
 
-ringBond : (b,c : Maybe SmilesBond) -> (x,y : SmilesAtom) -> Maybe SmilesBond
-ringBond Nothing Nothing   x y = Just $ smilesBond (isArom x) (isArom y)
-ringBond Nothing (Just x)  _ _ = Just x
-ringBond (Just x) Nothing  _ _ = Just x
-ringBond (Just x) (Just y) _ _ = if x == y then Just x else Nothing
+empty : ST
+empty = S 0 zero [] [<] [] []
+
+smilesBond : (xa,ya : Bool) -> BondTag -> SmilesBond
+smilesBond True True bt = SB bt Arom
+smilesBond _    _    bt = SB bt Sngl
+
+ringBond : (b,c : Maybe SmilesBondOrder) -> (x,y : SmilesAtom) -> BondTag -> Maybe SmilesBond
+ringBond Nothing Nothing   x y bt = Just $ smilesBond (isArom x) (isArom y) bt
+ringBond Nothing (Just x)  _ _ bt = Just (SB bt x)
+ringBond (Just x) Nothing  _ _ bt = Just (SB bt x)
+ringBond (Just x) (Just y) _ _ bt = if x == y then Just (SB bt x) else Nothing
 
 lookupRing : RingNr -> List (RingInfo n) -> Maybe (RingInfo n)
 lookupRing r []      = Nothing
@@ -96,6 +113,7 @@ ringBondMismatch r p =
  let bs := BB p $ incLen (length "\{r}") p
   in B (Custom RingBondMismatch) bs
 
+<<<<<<< HEAD
 record ST where
   constructor S
   cnt   : Nat
@@ -110,6 +128,11 @@ empty = S 0 [] [<] [] []
 toGraph : ST -> Either (BBErr SmilesErr) SmilesGraph
 toGraph (S n _ a b [])                = Right $ G n (mkGraph (cast a) b)
 toGraph (S _ _ _ _ (R _ r _ b p ::_)) =
+=======
+toGraph : ST -> Either (BBErr SmilesErr) SmilesGraph
+toGraph (S n _ _ a b [])                  = Right $ G n (mkGraph (cast a) b)
+toGraph (S _ _ _ _ _ (R _ x r _ b p ::_)) =
+>>>>>>> smiles-generator
  let bs := BB p $ incLen (length "\{R r b}") p
   in Left $ B (Custom UnclosedRing) bs
 
@@ -123,33 +146,33 @@ weakenRS : List (RingInfo n) -> List (RingInfo (S n))
 weakenRS x = believe_me x
 
 plainAtom : SmilesAtom -> ST -> ST
-plainAtom a1 (S c (A n a::ss) sa bs rs) =
-  let bs2 := edge n (smilesBond (isArom a) (isArom a1)) :: weakenBS bs
+plainAtom a1 (S c x (A n a::ss) sa bs rs) =
+  let bs2 := edge n (smilesBond (isArom a) (isArom a1) CHAIN) :: weakenBS bs
       st2 := A last a1 :: weakenST ss
-   in S (S c) st2 (sa:<a1) bs2 (weakenRS rs)
+   in S (S c) x st2 (sa:<a1) bs2 (weakenRS rs)
 plainAtom a1 st = st
 
-atomWithBond : SmilesBond -> SmilesAtom -> ST -> ST
-atomWithBond b a1 (S c (A n _::ss) sa bs rs) =
-  let bs2 := edge n b :: weakenBS bs
+atomWithBond : SmilesBondOrder -> SmilesAtom -> ST -> ST
+atomWithBond b a1 (S c x (A n _::ss) sa bs rs) =
+  let bs2 := edge n (SB CHAIN b) :: weakenBS bs
       st2 := A last a1 :: weakenST ss
-   in S (S c) st2 (sa:<a1) bs2 (weakenRS rs)
+   in S (S c) x st2 (sa:<a1) bs2 (weakenRS rs)
 atomWithBond b a1 st = st
 
 dottedAtom : SmilesAtom -> ST -> ST
-dottedAtom a1 (S c st sa bs rs) =
-  S (S c) (A last a1 :: weakenST st) (sa:<a1) (weakenBS bs) (weakenRS rs)
+dottedAtom a1 (S c x st sa bs rs) =
+  S (S c) x (A last a1 :: weakenST st) (sa:<a1) (weakenBS bs) (weakenRS rs)
 
 addRing : BytePos -> Ring -> ST -> Either (BBErr SmilesErr) ST
 addRing p (R r mb1) st =
   case st.stck of
     A n1 a1::_ => case lookupRing r st.rings of
-      Just (R n2 nr a2 mb2 p) => case ringBond mb1 mb2 a1 a2 of
+      Just (R n2 rix nr a2 mb2 p) => case ringBond mb1 mb2 a1 a2 (RING rix st.rix) of
         Just b  => case mkEdge n1 n2 b of
           Just e  => Right $ {bonds $= (e::), rings $= delete r} st
           Nothing => Right st -- impossible
         Nothing => Left (ringBondMismatch (R r mb1) p)
-      Nothing => Right $ {rings $= insert (R n1 r a1 mb1 p)} st
+      Nothing => Right $ {rings $= insert (R n1 st.rix r a1 mb1 p)} st
     [] => Right st -- impossible
 
 --------------------------------------------------------------------------------
@@ -171,7 +194,11 @@ record SSTCK (q : Type) where
   dob         : Ref q DOB
   mass        : Ref q (Maybe MassNr)
   elem        : Ref q AromElem
+<<<<<<< HEAD
   chirality   : Ref q ChiralityData
+=======
+  chirality   : Ref q Chirality
+>>>>>>> smiles-generator
   hcount      : Ref q HCount
   charge      : Ref q Charge
   error_      : Ref q (Maybe $ BBErr SmilesErr)
@@ -227,7 +254,7 @@ onRing : Ring -> Step1 q SSz SSTCK
 onRing r = \sk,t =>
   let p # t := startPos t
       s # t := read1 sk.st t
-   in case addRing p r s of
+   in case addRing p r $ {rix $= inc} s of
         Right s2 => writeAs sk.st s2 SRing t
         Left  x  => failWith x Err t
 
@@ -238,7 +265,11 @@ bracket t =
       cy # t := replace1 sk.chirality (MkCD 0 None []) t
       h  # t := replace1 sk.hcount 0 t
       ch # t := replace1 sk.charge 0 t
+<<<<<<< HEAD
    in onAtom (bracketData (aromIsotope m e) cy h ch) sk t
+=======
+   in onAtom (bracket (aromIsotope m e) cy h ch) sk t
+>>>>>>> smiles-generator
 
 mass : (RExp True, Step q SSz SSTCK)
 mass = bytes (plus digit) wrt
@@ -301,7 +332,11 @@ ring = vals interpolate onRing values
 bond : List (RExp True, Step q SSz SSTCK)
 bond = step '.' dot :: vals interpolate wrt values
   where
+<<<<<<< HEAD
     %inline wrt   : SmilesBond -> Step1 q SSz SSTCK
+=======
+    %inline wrt   : SmilesBondOrder -> Step1 q SSz SSTCK
+>>>>>>> smiles-generator
     wrt b = \sk,t => writeAs sk.dob (Bnd b) Atom t
 
     dot : (k : SSTCK q) => F1 q SST

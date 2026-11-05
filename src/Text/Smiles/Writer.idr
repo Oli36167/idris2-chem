@@ -94,7 +94,7 @@ findClosableOpenRing n c =
     (node1 e == c && node2 e == n) ||
     (node1 e == n && node2 e == c))
 
-allocateRingNr : {k :Nat} -> List (RingData k) -> RingNr
+allocateRingNr : List (RingData k) -> RingNr
 allocateRingNr ors =
    fromMaybe 0 $
      find (\x => not (elem x (map ringNr ors)))
@@ -102,6 +102,63 @@ allocateRingNr ors =
 
 parameters {k : Nat}
            (g : IGraph k SmilesBond SmilesAtom)
+
+  bothAromatic : Fin k -> Fin k -> Bool
+  bothAromatic a b = isArom (lab g a) && isArom (lab g b)
+
+  renderRingNrs : List (RingData k) -> String
+  renderRingNrs =
+    fastConcat . map render . sortBy (compare `on` ringNr)
+    where
+      render : RingData k -> String
+      render rd@(RD e _) =
+        let bothArom = bothAromatic (node1 e) (node2 e)
+         in bondSymbol bothArom (label e) ++ interpolate (ringNr rd)
+
+  renderTree : Tree (Node k) -> String
+  renderTree (T c@(MkNode v _ _ rings) cs) =
+    let rNr := renderRingNrs rings
+     in "\{v}\{rNr}\{renderChildren cs}"
+    where
+      renderChildren : Forest (Node k) -> String
+      renderChildren []               = ""
+      renderChildren [h@(T c _)]      = renderBond c ++ renderTree h
+      renderChildren (h@(T c _) :: t) =
+        "(\{renderBond c}\{renderTree h})\{renderChildren t}"
+
+  public export
+  renderForest : Forest (Node k) -> String
+  renderForest = fastConcat . intersperse "." . map renderTree
+
+-------------------------------------------------------------------------------
+-- Traversal Helpers
+-------------------------------------------------------------------------------
+  -- rings = neighbours - parent - children
+  computeNodeContext :
+       Fin k
+    -> Maybe (Fin k)
+    -> Tree (Fin k)
+    -> List (RingData k)
+    -> List (RingData k)
+  computeNodeContext c p (T _ ts) openR =
+    foldl step openR filtered
+    where
+      filtered : List (Fin k, SmilesBond)
+      filtered =
+        let children = map value ts
+        in filter
+             (\(n, _) => not (elem n children) && not (Just n == p))
+             (neighboursAsPairs g c)
+
+      -- close an existing ring or open a new one
+      step : List (RingData k) -> (Fin k, SmilesBond) -> List (RingData k)
+      step ors (n, e) =
+        case findClosableOpenRing n c ors of
+          Just rd => filter (\r => ringNr r /= ringNr rd) ors
+          Nothing =>
+            maybe ors
+                  (\edge => RD edge (R (allocateRingNr ors) Nothing) :: ors)
+                  (mkEdge c n e)
 
   zipL : Forest (Fin k) -> State (NodeState k) (Forest (Node k))
 
@@ -156,5 +213,4 @@ parameters {k : Nat}
 export
 graphToSmiles : {k : _} -> IGraph k SmilesBond SmilesAtom -> String
 graphToSmiles g = renderForest g . buildNodeForest g $ dff' g
-
 
