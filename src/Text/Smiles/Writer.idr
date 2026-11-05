@@ -58,8 +58,7 @@ permutParity []        = natToParity 0
 permutParity (x :: xs) = natToParity (count (< x) xs) <+> permutParity xs
 
 isSameParity :
-     {k : Nat}
-  -> List (ChiralNeighbour k)
+     List (ChiralNeighbour k)
   -> List (ChiralNeighbour k)
   -> Bool
 isSameParity = (==) `on` permutParity
@@ -124,6 +123,7 @@ parameters {k : Nat}
   updateParity xs ys v =
     case isSameParity xs ys of
          True  => g
+         -- graph darf nicht verändert werden
          False => updateNode v invertAtomChirality g
 
   buildNodeTree : Tree (Fin k) -> State (NodeState k) (Tree (Node k))
@@ -135,6 +135,7 @@ parameters {k : Nat}
         ringChanges    = ringDelta openR openR'
         initialNOrd    = initialNeighbourOrdering g v
         currentNOrd    = currentNeighbourOrdering g v p childrenAndRings
+        -- refactor
         g'             = updateParity initialNOrd currentNOrd v
         nodeLabel      = lab g' v
 
