@@ -21,6 +21,7 @@ import Test.Text.Lex.Formula
 import Test.Text.Molfile
 import Test.Text.Smiles.Parser
 import Test.Text.Smiles.Writer
+import Test.Text.Smiles.Stereo
 
 main : IO ()
 main = do
@@ -45,4 +46,5 @@ main = do
     , Vector.props
     , writerProps
     , Parity.props
+    , Stereo.props
     ]
