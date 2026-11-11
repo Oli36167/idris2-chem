@@ -1,4 +1,5 @@
-||| Writes a molecular graph (IGraph k SmilesBond SmilesAtom) out as a
+||| This is WIP, use at your own risk.
+||| Writes a molecular graph (IGraph k SmilesBondOrder SmilesAtom) out as a
 ||| SMILES string.
 |||
 ||| Limitation: Currently only stereochemistry that is already explicitly
@@ -8,79 +9,63 @@
 module Text.Smiles.Writer
 
 import Control.Monad.State
+import Chem.Parity
 
 import Data.Graph.Indexed.Util
 import Data.Graph.Indexed.Query.DFS
 import Data.Tree
-
-import Debug.Trace
-import Decidable.Equality
 import Derive.Prelude
 
 import Text.Molfile.Types
 import Text.Smiles.Parser
-import Text.Smiles.Traversal
 import Text.Smiles.Types
-
 
 %default total
 %language ElabReflection
 
-
 --------------------------------------------------------------------------------
 --          parity
 --------------------------------------------------------------------------------
-export
-data Parity = Even | Odd
-
-%runElab deriveIndexed "Parity" [Eq, Show]
-
-export
-Semigroup Parity where
-  Even <+> p    = p
-  Odd  <+> Even = Odd
-  Odd  <+> Odd  = Even
-
-export
-Monoid Parity where
-  neutral = Even
-
-export
-natToParity : Nat -> Parity
-natToParity n =
-  case mod n 2 of
-    0 => Even
-    _ => Odd
-
-export
-permutParity : Ord a => List a -> Parity
-permutParity []        = natToParity 0
-permutParity (x :: xs) = natToParity (count (< x) xs) <+> permutParity xs
-
-isSameParity :
-     List (ChiralNeighbour k)
-  -> List (ChiralNeighbour k)
-  -> Bool
-isSameParity = (==) `on` permutParity
-
 -- TODO what about all other cases?
 invertChirality : Chirality -> Chirality
 invertChirality CW  = CCW
 invertChirality CCW = CW
 invertChirality c   = c
 
-invertChiralityData : ChiralityData -> ChiralityData
-invertChiralityData (MkCD k ch ns) =  MkCD k (invertChirality ch) ns
-
-accessSmilesAtom : SmilesAtom -> SmilesAtom
-accessSmilesAtom (SubsetAtom elem arom) = SubsetAtom elem arom
-accessSmilesAtom (Bracket atom) = Bracket atom
-
 invertAtomChirality : SmilesAtom -> SmilesAtom
 invertAtomChirality (SubsetAtom elem arom) = SubsetAtom elem arom
 invertAtomChirality (Bracket atom) =
-  Bracket $ { chirality := invertChiralityData atom.chirality } atom
+  Bracket $ { chirality := invertChirality atom.chirality } atom
 
+updateChirality :
+     List (BStereo k)
+  -> List (BStereo k)
+  -> SmilesAtom
+  -> SmilesAtom
+updateChirality xs ys atom =
+  case sameParity xs ys of
+    True  => atom
+    False => invertAtomChirality atom
+
+--------------------------------------------------------------------------------
+--          helpers
+--------------------------------------------------------------------------------
+
+getChildrenFinK : {k : Nat} -> List (Tree (Fin k)) -> List (Fin k)
+getChildrenFinK = map value
+
+bondSymbol : Bool -> SmilesBond -> String
+bondSymbol bothArom (SB _ o) =
+  if o == (if bothArom then Arom else Sngl)
+     then ""
+     else interpolate o
+
+export
+ringNr : {k : Nat} -> RingData k -> RingNr
+ringNr (RD _ (R nr _)) = nr
+
+renderBond : {k : Nat} -> Node k -> String
+renderBond (MkNode _ pE bothArom _) = maybe "" (bondSymbol bothArom) pE
 
 findClosableOpenRing :
      {k : Nat}
@@ -94,7 +79,7 @@ findClosableOpenRing n c =
     (node1 e == c && node2 e == n) ||
     (node1 e == n && node2 e == c))
 
-allocateRingNr : List (RingData k) -> RingNr
+allocateRingNr : {k : Nat} -> List (RingData k) -> RingNr
 allocateRingNr ors =
    fromMaybe 0 $
      find (\x => not (elem x (map ringNr ors)))
@@ -130,26 +115,62 @@ parameters {k : Nat}
   renderForest : Forest (Node k) -> String
   renderForest = fastConcat . intersperse "." . map renderTree
 
+--------------------------------------------------------------------------------
+--          neighbours
+--------------------------------------------------------------------------------
+  public export
+  initialNeighbourOrdering : Fin k -> ?someType
+  initialNeighbourOrdering v = ?useUpstramChangesOnceTested
+
+  hasOneImplicitH : Fin k -> Bool
+  hasOneImplicitH c =
+    case lab g c of
+      SubsetAtom elem arom => False
+      Bracket atom         =>
+        case atom.hydrogen of
+          1 => True
+          _ => False
+
+  ringNeighbours :
+       Maybe (Fin k)
+    -> Fin k
+    -> List (Tree (Fin k))
+    -> List (Fin k, SmilesBond)
+  ringNeighbours p c ts =
+    filter
+    (\(n, _) => not (elem n (getChildrenFinK ts)) && not (Just n == p))
+    (neighboursAsPairs g c)
+
 -------------------------------------------------------------------------------
 -- Traversal Helpers
--------------------------------------------------------------------------------
+-----------------------------------------------------------------------------
+
+  currentNeighbourOrdering :
+       Fin k
+    -> Maybe (Fin k)
+    -> ChildrenAndRings k
+    -> List (BStereo k)
+  currentNeighbourOrdering c p (CR children rings) =
+    let implicitH = if hasOneImplicitH c then [ImpH] else []
+        parent    = maybe [] (pure . Bnd) p
+        children'  = map Bnd children
+        rings'     = map Bnd $ map fst $ rings
+      in (parent ++ implicitH ++ children' ++ rings')
+
   -- rings = neighbours - parent - children
   computeNodeContext :
        Fin k
     -> Maybe (Fin k)
     -> Tree (Fin k)
     -> List (RingData k)
-    -> List (RingData k)
+    -> (List (RingData k), ChildrenAndRings k)
   computeNodeContext c p (T _ ts) openR =
-    foldl step openR filtered
+    let children         = getChildrenFinK ts
+        rings            = ringNeighbours p c ts
+        context          = foldl step openR rings
+        childrenAndRings = CR children rings
+    in (context, childrenAndRings)
     where
-      filtered : List (Fin k, SmilesBond)
-      filtered =
-        let children = map value ts
-        in filter
-             (\(n, _) => not (elem n children) && not (Just n == p))
-             (neighboursAsPairs g c)
-
       -- close an existing ring or open a new one
       step : List (RingData k) -> (Fin k, SmilesBond) -> List (RingData k)
       step ors (n, e) =
@@ -170,31 +191,21 @@ parameters {k : Nat}
 
   -- bond to parent (if any) and whether both atoms are aromatic
   parentInfo : Maybe (Fin k) -> Fin k -> (Maybe SmilesBond, Bool)
-  parentInfo p v = (p >>= elab g v, maybe False (bothAromatic g v) p)
+  parentInfo p v = (p >>= elab g v, maybe False (bothAromatic v) p)
 
-  updateParity :
-       List (ChiralNeighbour k)
-    -> List (ChiralNeighbour k)
-    -> Fin k
-    -> IGraph k SmilesBond SmilesAtom
-  updateParity xs ys v =
-    case isSameParity xs ys of
-         True  => g
-         -- graph darf nicht verändert werden
-         False => updateNode v invertAtomChirality g
 
   buildNodeTree : Tree (Fin k) -> State (NodeState k) (Tree (Node k))
   buildNodeTree t@(T v ts) = do
     pNS@(MkNodeState p openR) <- get
 
     -- get info for current node
-    let (openR', childrenAndRings) = computeNodeContext g v p t openR
+    let (openR', childrenAndRings) = computeNodeContext v p t openR
         ringChanges    = ringDelta openR openR'
-        initialNOrd    = initialNeighbourOrdering g v
-        currentNOrd    = currentNeighbourOrdering g v p childrenAndRings
-        -- refactor
-        g'             = updateParity initialNOrd currentNOrd v
-        nodeLabel      = lab g' v
+        -- TODO adapt to upstream changes
+        initialNOrd    = initialNeighbourOrdering v
+        -- TODO adapt to upstream changes
+        currentNOrd    = currentNeighbourOrdering v p childrenAndRings
+        nodeLabel      = updateChirality initialNOrd currentNOrd (lab g v)
 
     put (MkNodeState (Just v) openR') -- set current node as parent
     ts2 <- zipL ts           -- process children
