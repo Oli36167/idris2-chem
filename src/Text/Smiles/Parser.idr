@@ -11,7 +11,6 @@ import Syntax.T1
 import Text.ILex
 import Text.ILex.State.Derive
 import Text.Smiles.Types
-import Text.Smiles.Traversal
 
 %default total
 %language ElabReflection

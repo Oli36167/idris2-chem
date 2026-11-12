@@ -85,6 +85,11 @@ allocateRingNr ors =
      find (\x => not (elem x (map ringNr ors)))
           (mapMaybe refineRingNr [1..99])
 
+-- TODO this was taken from test/src/Test/Text/Smiles/Stereo.idr
+Cast SmilesAtom HCount where
+  cast (SubsetAtom elem arom) = 0
+  cast (Bracket x) = cast x
+
 parameters {k : Nat}
            (g : IGraph k SmilesBond SmilesAtom)
 
@@ -118,10 +123,6 @@ parameters {k : Nat}
 --------------------------------------------------------------------------------
 --          neighbours
 --------------------------------------------------------------------------------
-  public export
-  initialNeighbourOrdering : Fin k -> ?someType
-  initialNeighbourOrdering v = ?useUpstramChangesOnceTested
-
   hasOneImplicitH : Fin k -> Bool
   hasOneImplicitH c =
     case lab g c of
@@ -153,8 +154,8 @@ parameters {k : Nat}
   currentNeighbourOrdering c p (CR children rings) =
     let implicitH = if hasOneImplicitH c then [ImpH] else []
         parent    = maybe [] (pure . Bnd) p
-        children'  = map Bnd children
-        rings'     = map Bnd $ map fst $ rings
+        children' = map Bnd children
+        rings'    = map Bnd $ map fst $ rings
       in (parent ++ implicitH ++ children' ++ rings')
 
   -- rings = neighbours - parent - children
@@ -202,7 +203,7 @@ parameters {k : Nat}
     let (openR', childrenAndRings) = computeNodeContext v p t openR
         ringChanges    = ringDelta openR openR'
         -- TODO adapt to upstream changes
-        initialNOrd    = initialNeighbourOrdering v
+        initialNOrd    = stereoBonds g v
         -- TODO adapt to upstream changes
         currentNOrd    = currentNeighbourOrdering v p childrenAndRings
         nodeLabel      = updateChirality initialNOrd currentNOrd (lab g v)
@@ -220,6 +221,7 @@ parameters {k : Nat}
 
   buildNodeForest : Forest (Fin k) -> Forest (Node k)
   buildNodeForest ts = evalState (MkNodeState Nothing []) (zipL ts)
+
 
 export
 graphToSmiles : {k : _} -> IGraph k SmilesBond SmilesAtom -> String
