@@ -1,13 +1,17 @@
 module Text.Smiles.Parser
 
 import Chem
+import Control.Monad.State
 import Data.Finite
+import Data.Graph.Indexed.Query.DFS
 import Data.SnocVect
+import Data.Tree
 import Derive.Prelude
 import Syntax.T1
 import Text.ILex
 import Text.ILex.State.Derive
 import Text.Smiles.Types
+import Text.Smiles.Traversal
 
 %default total
 %language ElabReflection

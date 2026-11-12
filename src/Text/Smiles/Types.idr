@@ -1,9 +1,11 @@
 module Text.Smiles.Types
 
 import Chem
+import Decidable.Equality
 import Derive.Finite
 import Derive.Prelude
 import Derive.Refined
+
 
 %default total
 %language ElabReflection
@@ -109,7 +111,9 @@ data SmilesAtom : Type where
     -> (arom       : Bool)
     -> {auto 0 prf : ValidSubset elem arom}
     -> SmilesAtom
-  Bracket : Atom AromIsotope Charge () () HCount () Chirality () -> SmilesAtom
+  Bracket :
+       Atom AromIsotope Charge () () HCount () Chirality ()
+    -> SmilesAtom
 
 %runElab derive "SmilesAtom" [Show,Eq]
 
@@ -144,6 +148,10 @@ Cast SmilesAtom AromIsotope where
 export %inline
 Cast SmilesAtom AromElem where
   cast = cast . cast {to = AromIsotope}
+
+export %inline
+bracketData : AromIsotope -> Chirality -> HCount -> Charge -> SmilesAtom
+bracketData a c h ch = Bracket (MkAtom a ch () () h () c ())
 
 export %inline
 bracket : AromIsotope -> Chirality -> HCount -> Charge -> SmilesAtom
@@ -286,6 +294,40 @@ Interpolation SmilesBond where interpolate = interpolate . order
 public export
 0 SmilesGraph : Type
 SmilesGraph = Graph SmilesBond SmilesAtom
+
+------------------------------------------------------------------------------
+-- Writer, wip
+------------------------------------------------------------------------------
+
+public export
+record RingData k where
+  constructor RD
+  edge : Edge k SmilesBond
+  ring : Ring
+
+%runElab deriveIndexed "RingData" [Eq]
+
+public export
+record Node k where
+  constructor MkNode
+  label : SmilesAtom
+  parentEdge : Maybe SmilesBond
+  bothArom : Bool
+  rings : List (RingData k)
+
+public export
+record NodeState k where
+  constructor MkNodeState
+  parent : Maybe (Fin k)
+  openRings : List (RingData k)
+
+%runElab deriveIndexed "NodeState" [Eq]
+
+public export
+record ChildrenAndRings (k : Nat) where
+  constructor CR
+  children : List (Fin k)
+  rings    : List (Fin k, SmilesBond)
 
 --------------------------------------------------------------------------------
 -- Chiral Order
