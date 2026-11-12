@@ -38,6 +38,7 @@ prop_stereo =
     testStereo "N1C2C3O[C@]123" 5 4 [Bnd 3, Bnd 0, Bnd 1, Bnd 2]
     testStereo "[C@]123OC1C2N3" 5 0 [Bnd 2, Bnd 3, Bnd 4, Bnd 1]
     testStereo "[C@H](N)(O)C" 4 0 [ImpH, Bnd 1, Bnd 2, Bnd 3]
+    testStereo "[C@@H]12C(N1)O2" 4 0 [ImpH, Bnd 2, Bnd 3, Bnd 1]
 
 export
 props : Group
